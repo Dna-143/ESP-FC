@@ -105,8 +105,13 @@ int FAST_CODE_ATTR Controller::update()
 
   resetIterm();
 
-  // New controller runs in parallel for comparison.
-  // It does NOT modify motor output.
+// Update assisted-mode V2 controllers.
+//
+// Angle V2 becomes authoritative for Roll/Pitch
+// setpoint generation in ESPFC_ANGLE_V2_ACTIVE_TEST.
+//
+// AltHold V2 remains shadow-only and non-actuating.
+updateAssistedModesShadow();
   updateAssistedModesShadow();
 
   switch (_model.config.mixer.type)
@@ -212,16 +217,17 @@ if (_model.isModeActive(MODE_ANGLE))
 #if defined(ESPFC_ANGLE_V2_ACTIVE_TEST)
 
   // ---------------------------------------------------
-  // ANGLE V2 AUTHORITATIVE SETPOINT — BENCH/SIL/HIL ONLY
+  // ANGLE V2
   //
-  // updateAssistedModesShadow() runs before outerLoop()
-  // in Controller::update(), so these V2 targets have
-  // already been calculated for the current controller
-  // cycle.
+  // The V2 attitude controller is now the only Angle
+  // controller in the V2 validation architecture.
   //
-  // The V2 controller does NOT bypass the existing
-  // inner Roll/Pitch rate PID. It replaces only the old
-  // Angle outer-loop target generator.
+  // updateAssistedModesShadow() executes before this
+  // function and produces the current Roll/Pitch rate
+  // targets.
+  //
+  // Those rate targets feed the existing inner rate
+  // controller exactly as Acro does.
   // ---------------------------------------------------
 
   const auto& angleV2 =
@@ -239,12 +245,7 @@ if (_model.isModeActive(MODE_ANGLE))
   }
   else
   {
-    // Never feed stale V2 data into the inner controller.
-    //
-    // The assisted-mode supervisor should normally remove
-    // MODE_ANGLE when attitude health is lost. Until that
-    // mode update occurs, keep the experimental setpoint
-    // neutral.
+    // Never reuse stale assisted-mode targets.
     _model.state.setpoint.rate[
         AXIS_ROLL] =
         0.0f;
@@ -256,27 +257,19 @@ if (_model.isModeActive(MODE_ANGLE))
 
 #else
 
-  // ---------------------------------------------------
-  // LEGACY ANGLE CONTROLLER
+  // Angle V2 is intentionally unavailable in ordinary
+  // builds until the non-actuating validation phase is
+  // complete.
   //
-  // Retained for normal builds until V2 has completed
-  // non-actuating validation.
-  // ---------------------------------------------------
+  // Do not silently fall back to the obsolete legacy
+  // Angle controller.
+  _model.state.setpoint.rate[
+      AXIS_ROLL] =
+      0.0f;
 
-  for (size_t i = 0;
-       i < AXIS_COUNT_RP;
-       ++i)
-  {
-    const float angleSetpoint =
-        Utils::toRad(
-            _model.config.level.angleLimit) *
-        _model.state.input.ch[i];
-
-    _model.state.setpoint.rate[i] =
-        _model.state.outerPid[i].update(
-            angleSetpoint,
-            _model.state.attitude.euler[i]);
-  }
+  _model.state.setpoint.rate[
+      AXIS_PITCH] =
+      0.0f;
 
 #endif
 }
@@ -471,7 +464,15 @@ float Controller::calculatePilotClimbRateShadow() const
       MAX_DESCENT_MS;
 }
 
-
+// NOTE:
+// This function contains two different maturity levels:
+//
+// ANGLE V2:
+//   authoritative setpoint source in the dedicated
+//   V2 validation build.
+//
+// ALTHOLD V2:
+//   shadow-only and must not command thrust.
 void Controller::updateAssistedModesShadow()
 {
   auto& shadow =
