@@ -112,7 +112,6 @@ int FAST_CODE_ATTR Controller::update()
 //
 // AltHold V2 remains shadow-only and non-actuating.
 updateAssistedModesShadow();
-  updateAssistedModesShadow();
 
   switch (_model.config.mixer.type)
     {
