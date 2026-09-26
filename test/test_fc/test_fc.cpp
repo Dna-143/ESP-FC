@@ -1264,13 +1264,22 @@ void test_controller_shadow_althold_full_climb_rate_scaling()
   TEST_ASSERT_TRUE(
       model.state.assistedShadow
           .altitudeTargetValid);
+// Full climb command is 1.5 m/s.
+//
+// Derive the expected one-cycle target movement from the
+// actual controller loop rate instead of assuming 1 kHz.
+const float expectedTarget =
+    2.0f +
+    1.5f /
+        static_cast<float>(
+            model.state.loopTimer.rate);
 
-  // 1.5 m/s * 0.001 s = 0.0015 m.
-  TEST_ASSERT_FLOAT_WITHIN(
-      0.00002f,
-      2.0015f,
-      model.state.assistedShadow
-          .altitudeTarget);
+TEST_ASSERT_FLOAT_WITHIN(
+    0.00002f,
+    expectedTarget,
+    model.state.assistedShadow
+        .altitudeTarget);
+
 }
 void test_actuator_althold_fault_requires_switch_cycle()
 {
